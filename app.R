@@ -1,51 +1,42 @@
-#
-# This is a Shiny web application. You can run the application by clicking
-# the 'Run App' button above.
-#
-# Find out more about building applications with Shiny here:
-#
-#    https://shiny.posit.co/
-#
-
+# Load required libraries
 library(shiny)
+library(tidyverse)
+library(lubridate)
+library(DT)
 
-# Define UI for application that draws a histogram
-ui <- fluidPage(
 
-    # Application title
-    titlePanel("Old Faithful Geyser Data"),
+# Load raw datasets
+drugs_df <- read_csv("data/raw/Substance_Use_20250725.csv")
+naloxone_df <- read_csv("data/raw/Naloxone_Administrations_20250725.csv")
 
-    # Sidebar with a slider input for number of bins 
-    sidebarLayout(
-        sidebarPanel(
-            sliderInput("bins",
-                        "Number of bins:",
-                        min = 1,
-                        max = 50,
-                        value = 30)
-        ),
 
-        # Show a plot of the generated distribution
-        mainPanel(
-           plotOutput("distPlot")
-        )
-    )
-)
+# Standardize column types for merging
+drugs_df <- drugs_df %>%
+  mutate(
+    `Incident Number` = as.character(`Incident Number`),
+    `Neighbourhood ID` = as.character(`Neighbourhood ID`),
+    `Dispatch Date` = parse_date_time(`Dispatch Date`, orders = "mdy IMS p")
+  )
 
-# Define server logic required to draw a histogram
-server <- function(input, output) {
+naloxone_df <- naloxone_df %>%
+  mutate(
+    `Incident Number` = as.character(`Incident Number`),
+    `Neighbourhood ID` = as.character(`Neighbourhood ID`),
+    `Dispatch Date` = floor_date(`Dispatch Date`, unit = "minute")  # round if needed
+  )
 
-    output$distPlot <- renderPlot({
-        # generate bins based on input$bins from ui.R
-        x    <- faithful[, 2]
-        bins <- seq(min(x), max(x), length.out = input$bins + 1)
+# Merge using the three columns
+merged_df <- full_join(
+  drugs_df,
+  naloxone_df %>% select(`Incident Number`, `Neighbourhood ID`, `Dispatch Date`, `Naxolone Administrations`),
+  by = c("Incident Number", "Neighbourhood ID", "Dispatch Date")
+) %>%
+  mutate(
+    naloxone_administered = if_else(is.na(`Naxolone Administrations`), FALSE, `Naxolone Administrations` > 0)
+  )
 
-        # draw the histogram with the specified number of bins
-        hist(x, breaks = bins, col = 'darkgray', border = 'white',
-             xlab = 'Waiting time to next eruption (in mins)',
-             main = 'Histogram of waiting times')
-    })
-}
+
 
 # Run the application 
-shinyApp(ui = ui, server = server)
+#shinyApp(ui = ui, server = server)
+

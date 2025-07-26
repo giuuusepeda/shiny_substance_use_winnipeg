@@ -1,3 +1,5 @@
+# load packages
+
 library(shiny)
 library(tidyverse)
 library(lubridate)
@@ -7,53 +9,85 @@ library(dplyr)
 library(stringr)
 
 
-
-# ───────────────────────────────────────────────────────────────
-# STEP 1: Load raw CSVs
-# ───────────────────────────────────────────────────────────────
+# load cvs files
 
 drugs_df <- read_csv("data/raw/Substance_Use_20250725.csv", show_col_types = FALSE)
 naloxone_df <- read_csv("data/raw/Naloxone_Administrations_20250725.csv", show_col_types = FALSE)
 
+
+#Fix column "Naxolone Administrations" name
+
 naloxone_df <- naloxone_df %>%
   rename(naloxone_adm = "Naxolone Administrations")
-# ───────────────────────────────────────────────────────────────
-# STEP 2: Standardize columns in drugs_df
-# - Convert keys to character for safe joining
-# - Parse Dispatch Date from text to datetime
-# ───────────────────────────────────────────────────────────────
 
+
+
+# standardize columns in drugs_df
 
 
 naloxone_df <- naloxone_df %>% clean_names()
 drugs_df <- drugs_df %>% clean_names()
 
+
+# check dispatch_date format
+
 head(drugs_df$dispatch_date, 5)
 str(drugs_df$dispatch_date)
+
+# drogs chr [1:102650] wrong 06/08/2022 06:57:13 AM
 
 head(naloxone_df$dispatch_date, 5)
 str(naloxone_df$dispatch_date)
 
+# naloxone POSIXct[1:24243] right 
+
+
+# convert keys to character for safe joining
+
+#force conversion and tag fail
 
 drugs_df <- drugs_df %>%
   mutate(
-    dispatch_date = mdy_hms(dispatch_date),
-    dispatch_day = as.Date(dispatch_date)
-  )
+     # 1. cleans extra spaces
+    dispatch_date_clean = str_trim(dispatch_date),
+     
+     # 2. tries to convert to POSIXct
+    dispatch_date_parsed = suppressWarnings(mdy_hms(dispatch_date_clean)),
+     
+     # 3. tags failed ones as true
+    parse_failed = is.na(dispatch_date_parsed) & !is.na(dispatch_date_clean)
+    )
+
+#check new format
+head(drugs_df$dispatch_date_parsed, 5)
+
+#check how many failed (false)
+summary(drugs_df$parse_failed) 
+
 naloxone_df <- naloxone_df %>%
-  mutate(dispatch_day = as.Date(dispatch_date))
+  mutate(
+    dispatch_day = as.Date(dispatch_date) #create new day variable to ignore time
+  )
+
+drugs_df <- drugs_df %>%
+  mutate(
+    dispatch_day = as.Date(dispatch_date_parsed) #create new day variable to ignore time
+  )
 
 summary(naloxone_df$dispatch_day)
 summary(drugs_df$dispatch_day)
 
+
+#show lines with repeated composed key -> multiple-patient incident
 naloxone_df %>%
   count(incident_number, neighbourhood_id, dispatch_day) %>%
   filter(n > 1)
 
+#variables list to summary df for naloxone_df
+cols_to_concat2 <- c("age", "gender", "ward",  "neighbourhood")
 
-
-
-naloxone_summary2 <- naloxone_df %>%
+#creates summary df -> groups by incident for naloxone_df
+naloxone_summary <- naloxone_df %>%
   group_by(incident_number, neighbourhood_id, dispatch_day) %>%
   summarise(
     across(all_of(cols_to_concat2), ~ 
@@ -66,17 +100,21 @@ naloxone_summary2 <- naloxone_df %>%
     .groups = "drop"
   )
 
-naloxone_summary %>%
+# naloxone_summary2 %>%
+#   count(incident_number, neighbourhood_id, dispatch_day) %>%
+#   filter(n > 1)
+
+
+#show lines with repeated composed key -> multiple-patient incident
+drugs_df %>%
   count(incident_number, neighbourhood_id, dispatch_day) %>%
-  filter(n > 1)
+  filter(n > 1)#
 
-
-
-# Lista das colunas que queremos unificar
+#variables list to summary df for drugs
 cols_to_concat <- c("age", "gender", "substance", "ward",  "neighbourhood")
-cols_to_concat2 <- c("age", "gender", "ward",  "neighbourhood")
 
-# Agrupamento e concatenação
+
+#creates summary df -> groups by incident for drugs_df
 drugs_summary <- drugs_df %>%
   group_by(incident_number, neighbourhood_id, dispatch_day) %>%
   summarise(
@@ -87,10 +125,8 @@ drugs_summary <- drugs_df %>%
     .groups = "drop"
   )
 
-# ───────────────────────────────────────────────────────────────
-# STEP 3: Standardize keys in naloxone_df
-# - Keep Dispatch Date as-is (already parsed)
-# ───────────────────────────────────────────────────────────────
+
+# Standardize keys in naloxone_summary and drugs_summary
 
 naloxone_summary <- naloxone_summary %>%
   mutate(
@@ -140,6 +176,57 @@ merged_df <- left_join(
     naloxone_adm = naloxone_given > 0
   )
 summary(merged_df)
+
+
+
+
+merged_df %>%
+  mutate(
+    age_match = age.x == age.y,
+    gender_match = gender.x == gender.y,
+    ward_match = ward.x == ward.y,
+    neighbourhood_match = neighbourhood.x == neighbourhood.y,
+    num_patients_match = num_patients.x == num_patients.y
+  ) %>%
+  summarise(
+    age_all_match = all(age_match, na.rm = TRUE),
+    gender_all_match = all(gender_match, na.rm = TRUE),
+    ward_all_match = all(ward_match, na.rm = TRUE),
+    neighbourhood_all_match = all(neighbourhood_match, na.rm = TRUE),
+    num_patients_all_match = all(num_patients_match, na.rm = TRUE)
+  )
+merged_df %>%
+  filter(
+    age.x != age.y |
+      gender.x != gender.y |
+      neighbourhood.x != neighbourhood.y |
+      num_patients.x != num_patients.y
+  ) %>%
+  select(
+    incident_number,  # ou outra ID se tiver
+    age.x, age.y,
+    gender.x, gender.y,
+    neighbourhood.x, neighbourhood.y,
+    num_patients.x, num_patients.y
+  )
+
+df_diferencas <- merged_df %>%
+  filter(
+    str_trim(age.x)            != str_trim(age.y) |
+      str_trim(gender.x)         != str_trim(gender.y) |
+      str_trim(neighbourhood.x)  != str_trim(neighbourhood.y) |
+      num_patients.x             != num_patients.y
+  )
+
+merged_df <- merged_df %>%
+  mutate(
+    age = coalesce(age.x, age.y),
+    gender = coalesce(gender.x, gender.y),
+    neighbourhood = coalesce(neighbourhood.x, neighbourhood.y),
+    num_patients = coalesce(num_patients.x, num_patients.y)
+  ) %>%
+  select(-ends_with(".x"), -ends_with(".y"))
+
 # ───────────────────────────────────────────────────────────────
 # STEP 6: Save final processed data for static use
 # - Can be loaded by Shiny or served via API later

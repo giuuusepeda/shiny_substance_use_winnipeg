@@ -6,13 +6,15 @@ ui <- dashboardPage(
   dashboardSidebar(
     sidebarMenu(
       menuItem("Incident Overview", tabName = "overview", icon = icon("chart-line")),
-      menuItem("Service Map", tabName = "map", icon = icon("map"))
+      menuItem("Service Map", tabName = "map", icon = icon("map")),
+      menuItem("About", tabName = "about", icon = icon("book"))
     )
   ),
   dashboardBody(
     tabItems(
       tabItem("overview", h2("Incident Overview")),
-      tabItem("map", h2("Service Map"))
+      tabItem("map", h2("Service Map")),
+      tabItem("about", h2("About"))
     )
   )
 )

@@ -1,3 +1,17 @@
+# ------------------------------------------------------------------------------
+# Author: Giulia Sepeda
+# GitHub: https://github.com/giuusepeda
+# Project: shiny_substance_use_winnipeg
+# File: plot.R
+# Created: 26/07/2025
+# Description: plots
+#
+# 🚫 This code is part of a personal portfolio project.
+# Unauthorized use, copying, or distribution is prohibited.
+# For inquiries: giuliasepeda@gmail.com
+# ------------------------------------------------------------------------------
+
+
 library(dplyr)
 library(tidyr)
 library(stringr)

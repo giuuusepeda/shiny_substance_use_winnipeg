@@ -1,3 +1,18 @@
+# ------------------------------------------------------------------------------
+# Author: Giulia Sepeda
+# GitHub: https://github.com/giuusepeda
+# Project: shiny_substance_use_winnipeg
+# File: clean.R
+# Created: 26/07/2025
+# Description: ETL from https://data.winnipeg.ca/Fire-and-Paramedic-Service/Naloxone-Administrations/qd6b-q49i/about_data
+# and https://data.winnipeg.ca/Fire-and-Paramedic-Service/Substance-Use/6x82-bz5y/data_preview
+#
+# 🚫 This code is part of a personal portfolio project.
+# Unauthorized use, copying, or distribution is prohibited.
+# For inquiries: giuliasepeda@gmail.com
+# ------------------------------------------------------------------------------
+
+
 # load packages
 
 library(shiny)
@@ -9,13 +24,13 @@ library(dplyr)
 library(stringr)
 
 
-# load cvs files
+# load csv files
 
 drugs_df <- read_csv("data/raw/Substance_Use_20250725.csv", show_col_types = FALSE)
 naloxone_df <- read_csv("data/raw/Naloxone_Administrations_20250725.csv", show_col_types = FALSE)
 
 
-#Fix column "Naxolone Administrations" name
+#Fix column 'Naxolone Administrations' name
 
 naloxone_df <- naloxone_df %>%
   rename(naloxone_adm = "Naxolone Administrations")
@@ -64,9 +79,10 @@ head(drugs_df$dispatch_date_parsed, 5)
 #check how many failed (false)
 summary(drugs_df$parse_failed) 
 
+#create new day variable to ignore time
 naloxone_df <- naloxone_df %>%
   mutate(
-    dispatch_day = as.Date(dispatch_date) #create new day variable to ignore time
+    dispatch_day = as.Date(dispatch_date) 
   )
 
 drugs_df <- drugs_df %>%
@@ -84,13 +100,13 @@ naloxone_df %>%
   filter(n > 1)
 
 #variables list to summary df for naloxone_df
-cols_to_concat2 <- c("age", "gender", "ward",  "neighbourhood")
+cols_to_concat <- c("age", "gender", "ward", "neighbourhood")
 
 #creates summary df -> groups by incident for naloxone_df
 naloxone_summary <- naloxone_df %>%
   group_by(incident_number, neighbourhood_id, dispatch_day) %>%
   summarise(
-    across(all_of(cols_to_concat2), ~ 
+    across(all_of(cols_to_concat), ~ 
              if (n_distinct(.) == 1) as.character(first(.)) 
            else str_c(unique(.), collapse = ";")),
     num_patients = n(),
@@ -101,24 +117,24 @@ naloxone_summary <- naloxone_df %>%
   )
 
 # naloxone_summary2 %>%
-#   count(incident_number, neighbourhood_id, dispatch_day) %>%
+#   count("composite_key") %>%
 #   filter(n > 1)
 
 
 #show lines with repeated composed key -> multiple-patient incident
 drugs_df %>%
   count(incident_number, neighbourhood_id, dispatch_day) %>%
-  filter(n > 1)#
+  filter(n > 1)
 
 #variables list to summary df for drugs
-cols_to_concat <- c("age", "gender", "substance", "ward",  "neighbourhood")
+cols_to_concat2 <- c("age", "gender", "substance", "ward",  "neighbourhood")
 
 
 #creates summary df -> groups by incident for drugs_df
 drugs_summary <- drugs_df %>%
   group_by(incident_number, neighbourhood_id, dispatch_day) %>%
   summarise(
-    across(all_of(cols_to_concat), ~ 
+    across(all_of(cols_to_concat2), ~ 
              if (n_distinct(.) == 1) as.character(first(.)) 
            else str_c(unique(.), collapse = ";")),
     num_patients = n(),
@@ -142,29 +158,7 @@ drugs_summary <- drugs_summary %>%
     dispatch_day = as.Date(dispatch_day)
   )
 
-
-
-# ───────────────────────────────────────────────────────────────
-# STEP 4: Summarize naloxone administrations
-# - Group by incident keys
-# - Calculate total naloxone given per incident
-# ───────────────────────────────────────────────────────────────
-
-# drugs_df %>%
-#   filter(incident_number == "2011008470")  # exemplo com 3 linhas
-# 
-# 
-# incident_data_dedup <- drugs_df %>%
-#   distinct(incident_number, neighbourhood_id, dispatch_date, .keep_all = TRUE)
-# 
-# incident_data_dedup %>%
-#   filter(incident_number == "2011008470")  # exemplo com 3 linhas
-# ───────────────────────────────────────────────────────────────
-# STEP 5: Merge both datasets using a left join
-# - Keep all incidents from drugs_df
-# - Attach naloxone summary where matched
-# - Create logical column: naloxone_administered = TRUE/FALSE
-# ───────────────────────────────────────────────────────────────
+# Merge both datasets using a left join
 
 merged_df <- left_join(
   drugs_summary,
@@ -177,9 +171,14 @@ merged_df <- left_join(
   )
 summary(merged_df)
 
+# Casos com correspondência (naloxone_adm == TRUE)
+sum(merged_df$naloxone_adm)  # deve dar 7416
+
+# Casos sem correspondência (linha original, mas sem naloxone info)
+sum(!merged_df$naloxone_adm)  # deve dar 88784
 
 
-
+# unify differences between what was on drugs X and nalaxone y
 merged_df %>%
   mutate(
     age_match = age.x == age.y,
@@ -195,108 +194,82 @@ merged_df %>%
     neighbourhood_all_match = all(neighbourhood_match, na.rm = TRUE),
     num_patients_all_match = all(num_patients_match, na.rm = TRUE)
   )
+
+
 merged_df %>%
   filter(
     age.x != age.y |
       gender.x != gender.y |
       neighbourhood.x != neighbourhood.y |
-      num_patients.x != num_patients.y
+      num_patients.x != num_patients.y |
+      ward.x != ward.y
   ) %>%
   select(
-    incident_number,  # ou outra ID se tiver
+    incident_number, neighbourhood_id, dispatch_day,  # chave composta
     age.x, age.y,
     gender.x, gender.y,
     neighbourhood.x, neighbourhood.y,
-    num_patients.x, num_patients.y
+    num_patients.x, num_patients.y,
+    ward.x, ward.y
   )
 
-df_diferencas <- merged_df %>%
+merged_df %>%
   filter(
-    str_trim(age.x)            != str_trim(age.y) |
-      str_trim(gender.x)         != str_trim(gender.y) |
-      str_trim(neighbourhood.x)  != str_trim(neighbourhood.y) |
-      num_patients.x             != num_patients.y
-  )
+    age.x != age.y |
+      gender.x != gender.y |
+      neighbourhood.x != neighbourhood.y |
+      num_patients.x != num_patients.y |
+      ward.x != ward.y
+  ) %>%
+  nrow()
+
+anyDuplicated(merged_df$incident_number)
+
 
 merged_df <- merged_df %>%
   mutate(
     age = coalesce(age.x, age.y),
     gender = coalesce(gender.x, gender.y),
     neighbourhood = coalesce(neighbourhood.x, neighbourhood.y),
+    ward = coalesce(ward.x, ward.y),
     num_patients = coalesce(num_patients.x, num_patients.y)
   ) %>%
   select(-ends_with(".x"), -ends_with(".y"))
 
-# ───────────────────────────────────────────────────────────────
-# STEP 6: Save final processed data for static use
-# - Can be loaded by Shiny or served via API later
-# ───────────────────────────────────────────────────────────────
 
-write_csv(merged_df, "data/processed/merged_incident_data.csv")
+# fill na with "Unknown" for age, gender, substance, neighbourhood
 
+merged_df <- merged_df %>%
+  mutate(
+    age = if_else(is.na(age), "Unknown", age),
+    gender = if_else(is.na(gender), "Unknown", gender),
+    substance = if_else(is.na(substance), "Unknown", substance),
+    neighbourhood = if_else(is.na(neighbourhood), "Unknown", neighbourhood),
+    ward = if_else(is.na(ward), "Unknown", ward)
+  )
 
-# Quantas linhas tinha antes e depois?
-nrow(naloxone_df)  # número de pacientes
-nrow(merged_df)  # esperado: igual ou maior (se join 1:m)
+# change class for factor 
+merged_df <- merged_df %>%
+  mutate(
+    age = factor(age),
+    gender = factor(gender),
+    substance = factor(substance),
+    neighbourhood = factor(neighbourhood),
+    ward = factor(ward)
+  )
+
 
 # Verifique se vieram colunas NA do dataset da direita
 summary(merged_df)
 
+colSums(is.na(merged_df))
 
-nrow(naloxone_df)
-nrow(merged_df)
+#save as csv
+
+write_csv(merged_df, "data/processed/merged_incident_data.csv")
 
 
-naloxone_summary %>%
-  group_by(incident_number) %>%
-  summarise(
-    total_doses = sum(naloxone_given, na.rm = FALSE)
-  )
-
-drugs_df %>%
-  count(incident_number) %>%
-  filter(n > 1)
-
-merged_df %>%
-  group_by(incident_number) %>%
-  summarise(
-    total_doses = sum(naloxone_given, na.rm = TRUE),
-    num_patients = n(),
-    avg_doses_per_patient = total_doses / num_patients
-  ) %>%
-  filter(total_doses > 0 & num_patients >1)
-
-naloxone_df %>%
-  filter(incident_number == 2012009713) %>%
-  select("incident_number", "neighbourhood_id", "dispatch_date", patient_number, naloxone_adm)
-
-merged_df %>%
-  filter(incident_number == 2012009713) %>%
-  select("incident_number", "neighbourhood_id", "dispatch_day",  naloxone_adm)
-
-merged_df <- merged_df %>%
-  mutate(
-    x$incident_number = as.character(x$incident_number),
-    y$incident_number = as.character(y$incident_number),
-
-  )
-
-comparison <- merged_df %>%
-  filter(incident_number == 2012009713) %>%
-  select(incident_number, neighbourhood_id, dispatch_day) %>%
-  mutate(dispatch_day = as.Date(dispatch_day)) %>%
-  left_join(
-    naloxone_df %>%
-      filter(incident_number == 2012009713) %>%
-      mutate(dispatch_day = as.Date(dispatch_date)) %>%
-      mutate(incident_number = as.character(incident_number)) %>%
-      select(incident_number, neighbourhood_id, dispatch_day) %>%
-      distinct() %>%
-      mutate(in_naloxone = TRUE),
-    by = c("incident_number", "neighbourhood_id", "dispatch_day")
-  )
-
-merged_df %>%
-  count(incident_number, neighbourhood_id, dispatch_day) %>%
-  filter(n > 1)
+summary(drugs_df)
 summary(merged_df)
+
+

@@ -1,3 +1,17 @@
+# ------------------------------------------------------------------------------
+# Author: Giulia Sepeda
+# GitHub: https://github.com/giuusepeda
+# Project: shiny_substance_use_winnipeg
+# File: app.R
+# Created: 26/07/2025
+# Description: shiny app file for dashboard drug use in Winnipeg, CA
+#
+# 🚫 This code is part of a personal portfolio project.
+# Unauthorized use, copying, or distribution is prohibited.
+# For inquiries: giuliasepeda@gmail.com
+# ------------------------------------------------------------------------------
+
+
 library(shiny)
 library(shinydashboard)
 
